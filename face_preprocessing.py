@@ -55,7 +55,20 @@ def align_face(image, face):
 
     return aligned_image
 
-# Detects faces using dlib and returns cropped face images.
+# Function for preprocessing (resizing, normalization, and noise reduction)
+def preprocess_image(face_img):
+    try:
+        # Apply Gaussian blur
+        blurred = cv2.GaussianBlur(face_img, (5, 5), 0)
+        # Resize image to the required input size for the age detection model
+        resized = cv2.resize(blurred, (227, 227))
+        return resized
+    
+    except Exception as e:
+        print(f"Error in preprocessing image: {e}")
+        return None
+
+# Detects faces using dlib
 def detect_faces(image_path):
     img = cv2.imread(image_path)
 
@@ -106,15 +119,19 @@ def predict_age(face_img):
         print(f"Error predicting age: {e}")
         return "Unknown"
 
-# # Uses DeepFace to analyze face attributes
-# def analyze_face(face_img):
-#     face_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-#     result = DeepFace.analyze(face_rgb, actions=["age"], detector_backend="dlib", enforce_detection=False)
-#     return result
-
 # Main function to execute the process
 def main():
-    img1_path = "/Users/jenniferha/Library/CloudStorage/OneDrive-NorthCentralCollege/SP 25/CSCE 494 Capstone/DeepFace/dataset/img5.jpeg"
+    output_dir = "extracted_faces"
+    os.makedirs(output_dir, exist_ok=True)
+
+    img1_path = "/Users/jenniferha/Library/CloudStorage/OneDrive-NorthCentralCollege/SP 25/CSCE 494 Capstone/DeepFace/dataset/kid2.jpeg"
+    
+    # Read the image (original)
+    img = cv2.imread(img1_path)
+
+    if img is None:
+        print("❌ Error: Could not load the image.")
+        return
     
     faces, face_boxes, processed_img = detect_faces(img1_path) 
 
@@ -124,6 +141,9 @@ def main():
         print("❌ No faces detected. Exiting.")
         return
 
+    # Copy of the original image for applying blur
+    img_with_blur = img.copy()
+
     # Process each detected face
     for i, (face, box) in enumerate(zip(faces, face_boxes)):
         x, y, x2, y2 = box
@@ -131,27 +151,41 @@ def main():
         # Predict Age with confidence
         age, confidence = predict_age(face)
 
-        # analysis = analyze_face(face)
-        # print(f"🔍 Face {i+1} Analysis: {analysis}")
-
         # Annotate image with detected age and confidence
         text = f"{age} {confidence:.2f}%"
         cv2.putText(processed_img, text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
 
+        # Preprocess the face (Apply Gaussian blur)
+        preprocessed_face = preprocess_image(face)
+
+        if preprocessed_face is None:
+            continue
+
+        # Resize preprocessed face to match the original size of the detected face
+        preprocessed_face_resized = cv2.resize(preprocessed_face, (x2 - x, y2 - y))
+
+        # Place the resized preprocessed face (blurred) into the original image region
+        img_with_blur[y:y2, x:x2] = preprocessed_face_resized
+
+        age1, confidence1 = predict_age(preprocessed_face_resized)
+
+        text1 = f"{age1} {confidence1:.2f}%"
+        cv2.putText(img_with_blur, text1, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
+
+
     cv2.imshow("Processed Image", processed_img)
     cv2.waitKey(1)
-
-    output_dir = "extracted_faces"
-    os.makedirs(output_dir, exist_ok=True)
 
     for i, (face, box) in enumerate(zip(faces, face_boxes)):
         filename = os.path.join(output_dir, f"image_with_age_{i+1}.jpg")
         cv2.imwrite(filename, processed_img)  
         print(f"✅ Saved processed image with age annotations: {filename}")
 
-        # filename1 = os.path.join(output_dir, f"aligned_face_{i+1}.jpg")
-        # cv2.imwrite(filename1, face)  
-        # print(f"✅ Saved aligned face: {filename1}")
+        # Save preprocessed face
+        filename_preprocessed = os.path.join(output_dir, f"preprocessed_image_{i+1}.jpg")
+        cv2.imwrite(filename_preprocessed, img_with_blur)
+        print(f"✅ Saved image with Gaussian blur and age annotations: {filename_preprocessed}")
+
 
     cv2.destroyAllWindows()
 
